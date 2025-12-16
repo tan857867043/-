@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameStateEnum, Player, UpgradeOption, WeaponType, GeneratedAssets, ArtStyle } from './types';
 import GameCanvas from './components/GameCanvas';
-import { generateGameAssets, generateFlavorText } from './services/geminiService';
+import { generateGameAssets, generateFlavorText, setGlobalApiKey, hasValidApiKey, getGlobalApiKey } from './services/geminiService';
 import { WEAPON_DEFAULTS, DEFAULT_ASSETS, CANVAS_WIDTH, CANVAS_HEIGHT } from './constants';
 
 const ASSET_STORAGE_KEY = 'WUXIA_GAME_ASSETS_V1';
@@ -16,6 +16,10 @@ const App: React.FC = () => {
     const [selectedStyle, setSelectedStyle] = useState<ArtStyle>(ArtStyle.INK);
     const [hasSavedAssets, setHasSavedAssets] = useState(false);
     
+    // API Key State
+    const [apiKeyInput, setApiKeyInput] = useState(getGlobalApiKey());
+    const [isKeyValid, setIsKeyValid] = useState(hasValidApiKey());
+
     // Layout State
     const [layoutStyle, setLayoutStyle] = useState<React.CSSProperties>({});
     const [isTouch, setIsTouch] = useState(false);
@@ -28,54 +32,34 @@ const App: React.FC = () => {
     
     // 1. Layout & Platform Detection
     useEffect(() => {
-        // Detect Touch
         setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0);
-
-        // Responsive Sizing (Maintain Aspect Ratio)
         const handleResize = () => {
-            const targetRatio = CANVAS_WIDTH / CANVAS_HEIGHT; // 0.666...
+            const targetRatio = CANVAS_WIDTH / CANVAS_HEIGHT; 
             const winW = window.innerWidth;
-            const winH = window.innerHeight; // Use innerHeight to handle mobile address bars better usually
+            const winH = window.innerHeight; 
             const winRatio = winW / winH;
-
             let w, h;
-
             if (winRatio > targetRatio) {
-                // Screen is wider than game (PC / Tablet Landscape) -> Constrain by Height
                 h = winH;
                 w = h * targetRatio;
             } else {
-                // Screen is narrower than game (Mobile Portrait) -> Constrain by Width
                 w = winW;
                 h = w / targetRatio;
             }
-
-            setLayoutStyle({
-                width: w,
-                height: h,
-                // On very tall mobile screens, we might want to center vertically if aspect ratio doesn't match
-                // But usually we just fill width and let height scroll or clip? 
-                // Best for game: Fit inside without scrolling.
-                // Re-calculation for "Contain" logic:
-                ...(winRatio < targetRatio && (h > winH) ? { height: winH, width: winH * targetRatio } : {})
-            });
+            setLayoutStyle({ width: w, height: h });
         };
-
         window.addEventListener('resize', handleResize);
         handleResize();
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // 2. Load Assets from Storage on Mount
+    // 2. Load Assets
     useEffect(() => {
         try {
             const saved = localStorage.getItem(ASSET_STORAGE_KEY);
             if (saved) {
                 const parsed = JSON.parse(saved);
-                setAssets({
-                    ...DEFAULT_ASSETS,
-                    ...parsed
-                });
+                setAssets({ ...DEFAULT_ASSETS, ...parsed });
                 setHasSavedAssets(true);
             }
         } catch (e) {
@@ -83,6 +67,7 @@ const App: React.FC = () => {
         }
     }, []);
 
+    // HUD Loop
     useEffect(() => {
         if (gameState !== GameStateEnum.PLAYING) return;
         const interval = setInterval(() => {
@@ -102,11 +87,24 @@ const App: React.FC = () => {
         return () => clearInterval(interval);
     }, [gameState]);
 
+    const handleSaveKey = () => {
+        if (apiKeyInput.trim().length > 0) {
+            setGlobalApiKey(apiKeyInput.trim());
+            setIsKeyValid(true);
+            alert("API Key 已保存！");
+        }
+    };
+
     const startGame = () => {
         setGameState(GameStateEnum.PLAYING);
     };
 
     const handleGenerateAssets = async () => {
+        if (!isKeyValid) {
+            alert("请先输入有效的 Gemini API Key 才能生成素材！");
+            return;
+        }
+
         setGameState(GameStateEnum.ASSET_GEN);
         try {
             const newAssets = await generateGameAssets(selectedStyle);
@@ -122,19 +120,16 @@ const App: React.FC = () => {
 
             setAssets(finalAssets);
             setHasSavedAssets(true);
-            
-            try {
-                localStorage.setItem(ASSET_STORAGE_KEY, JSON.stringify(finalAssets));
-            } catch (e) {
-                console.error("Storage full or error", e);
-                alert("素材已生成，但本地存储空间不足，无法保存下次使用。");
-            }
-
+            localStorage.setItem(ASSET_STORAGE_KEY, JSON.stringify(finalAssets));
             const text = await generateFlavorText("Hero preparing to fight blood cultists");
             setFlavorText(text);
-        } catch (e) {
+        } catch (e: any) {
             console.error(e);
-            alert("生成失败 (Generation failed)");
+            if (e.message === 'API_KEY_MISSING') {
+                alert("API Key 缺失，请在菜单设置。");
+            } else {
+                alert("生成失败，请检查 API Key 配额或网络连接。");
+            }
         }
         setGameState(GameStateEnum.MENU);
     };
@@ -152,7 +147,6 @@ const App: React.FC = () => {
             { id: '3', name: '易筋经', description: '打通经脉，全方位提升内功修为与伤害', rarity: 'LEGENDARY', type: 'STAT', statType: 'might', value: 0.1, icon: '📜' },
              { id: '4', name: '神行百变', description: '身法诡谲，移动速度大幅提升', rarity: 'COMMON', type: 'STAT', statType: 'speed', value: 0.1, icon: '🦶' }
         ] as UpgradeOption[]).sort(() => 0.5 - Math.random()).slice(0, 3);
-        
         setUpgrades(newUpgrades);
     };
 
@@ -186,12 +180,7 @@ const App: React.FC = () => {
     return (
         <div className="w-full h-[100dvh] bg-neutral-950 text-slate-100 font-serif overflow-hidden flex items-center justify-center select-none">
             
-            {/* Game Container - Maintains Aspect Ratio */}
-            <div 
-                className="relative bg-slate-900 shadow-2xl overflow-hidden"
-                style={layoutStyle}
-            >
-                {/* Game Canvas Layer */}
+            <div className="relative bg-slate-900 shadow-2xl overflow-hidden" style={layoutStyle}>
                 <GameCanvas 
                     gameState={gameState} 
                     setGameState={setGameState}
@@ -202,15 +191,10 @@ const App: React.FC = () => {
                     isTouchDevice={isTouch}
                 />
 
-                {/* HUD Layer */}
                 {gameState === GameStateEnum.PLAYING && (
                     <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-10 flex flex-col justify-between">
-                        
-                        {/* Top Bar: HP and Stats */}
                         <div className="flex justify-between items-start p-6">
-                            {/* Player Status */}
                             <div className="flex flex-col gap-2">
-                                {/* HP Bar - Ink Style */}
                                 <div className="flex items-center gap-2">
                                     <div className="w-12 h-12 rounded-full border-4 border-slate-700 bg-slate-800 flex items-center justify-center shadow-lg z-20">
                                         <span className="font-ink text-2xl text-red-500">命</span>
@@ -225,32 +209,20 @@ const App: React.FC = () => {
                                         </span>
                                     </div>
                                 </div>
-                                
-                                {/* EXP Bar */}
                                 <div className="w-64 h-2 bg-slate-800/50 mt-1 rounded-full overflow-hidden ml-2">
-                                    <div 
-                                        className="h-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all duration-300"
-                                        style={{ width: `${(hudState.exp / hudState.nextExp) * 100}%` }}
-                                    />
+                                    <div className="h-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] transition-all duration-300" style={{ width: `${(hudState.exp / hudState.nextExp) * 100}%` }} />
                                 </div>
                             </div>
-
-                            {/* Right Stats */}
                             <div className="flex flex-col items-end gap-2">
                                 <div className="text-4xl font-ink text-amber-500 text-shadow-ink">
                                     境界 <span className="text-white">{hudState.level}</span>
                                 </div>
-                                
-                                {/* Frenzy Meter */}
                                 <div className="flex items-center gap-2 mt-2">
                                     <span className={`font-ink text-xl ${hudState.isFrenzy ? 'text-red-500 animate-pulse' : 'text-slate-400'}`}>
                                         {hudState.isFrenzy ? '血煞爆发' : '血煞值'}
                                     </span>
                                     <div className={`w-32 h-4 border border-slate-600 bg-slate-900/80 skew-x-12 overflow-hidden relative ${hudState.isFrenzy ? 'shadow-[0_0_15px_rgba(220,38,38,0.6)]' : ''}`}>
-                                        <div 
-                                            className={`h-full transition-all duration-100 ${hudState.isFrenzy ? 'bg-red-500' : 'bg-red-900/60'}`}
-                                            style={{ width: `${(hudState.blood / hudState.maxBlood) * 100}%` }}
-                                        />
+                                        <div className={`h-full transition-all duration-100 ${hudState.isFrenzy ? 'bg-red-500' : 'bg-red-900/60'}`} style={{ width: `${(hudState.blood / hudState.maxBlood) * 100}%` }} />
                                     </div>
                                 </div>
                             </div>
@@ -258,21 +230,28 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Main Menu Layer */}
                 {gameState === GameStateEnum.MENU && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1a1a] z-50">
-                        {/* Background Pattern */}
                         <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/black-scales.png')]"></div>
-                        
                         <div className="relative z-10 flex flex-col items-center w-full px-4">
-                            <h1 className="text-6xl md:text-8xl font-ink text-red-700 mb-4 text-shadow-ink tracking-widest animate-pulse text-center">
-                                血影武侠
-                            </h1>
-                            <p className="text-lg md:text-xl text-slate-400 mb-10 italic font-serif max-w-lg text-center leading-relaxed">
-                                "{flavorText}"
-                            </p>
+                            <h1 className="text-6xl md:text-8xl font-ink text-red-700 mb-4 text-shadow-ink tracking-widest animate-pulse text-center">血影武侠</h1>
+                            <p className="text-lg md:text-xl text-slate-400 mb-6 italic font-serif max-w-lg text-center leading-relaxed">"{flavorText}"</p>
                             
-                            <div className="flex flex-col gap-6 w-full max-w-xs items-center">
+                            {/* API Key Input */}
+                            <div className="flex items-center gap-2 mb-6 w-full max-w-xs">
+                                <input 
+                                    type="password" 
+                                    placeholder="输入 Gemini API Key" 
+                                    value={apiKeyInput}
+                                    onChange={(e) => setApiKeyInput(e.target.value)}
+                                    className="flex-1 bg-slate-800 border border-slate-600 px-3 py-2 text-xs text-white rounded focus:border-red-500 outline-none"
+                                />
+                                <button onClick={handleSaveKey} className="bg-slate-700 px-3 py-2 text-xs text-white rounded hover:bg-slate-600">
+                                    保存
+                                </button>
+                            </div>
+
+                            <div className="flex flex-col gap-4 w-full max-w-xs items-center">
                                 <button 
                                     onClick={startGame}
                                     className="group relative w-full px-8 py-4 bg-transparent border-2 border-red-800 text-red-500 font-ink text-3xl hover:bg-red-900/20 transition-all overflow-hidden"
@@ -281,9 +260,8 @@ const App: React.FC = () => {
                                     <div className="absolute inset-0 bg-red-900/10 transform -skew-x-12 translate-x-full group-hover:translate-x-0 transition-transform duration-300"></div>
                                 </button>
                                 
-                                {/* Style Selector */}
                                 <div className="flex flex-col items-center w-full gap-2">
-                                    <label className="text-slate-500 text-xs font-serif uppercase tracking-wider">美术风格 (Art Style)</label>
+                                    <label className="text-slate-500 text-xs font-serif uppercase tracking-wider">美术风格</label>
                                     <div className="flex gap-2 w-full">
                                         {[
                                             { id: ArtStyle.INK, label: '水墨' },
@@ -304,9 +282,10 @@ const App: React.FC = () => {
 
                                 <button 
                                     onClick={handleGenerateAssets}
-                                    className="w-full text-amber-600 hover:text-amber-500 text-sm font-serif border border-amber-900/30 bg-amber-900/10 py-2 hover:bg-amber-900/20 transition-colors"
+                                    disabled={!isKeyValid}
+                                    className={`w-full text-sm font-serif border py-2 transition-colors flex items-center justify-center gap-2 ${isKeyValid ? 'text-amber-600 hover:text-amber-500 border-amber-900/30 bg-amber-900/10 hover:bg-amber-900/20' : 'text-slate-600 border-slate-800 bg-transparent cursor-not-allowed'}`}
                                 >
-                                    ✨ AI生成新素材
+                                    {isKeyValid ? '✨ AI生成新素材' : '🔒 需要 API Key 生成素材'}
                                 </button>
                                 
                                 {hasSavedAssets && (
@@ -319,36 +298,20 @@ const App: React.FC = () => {
                                 )}
                             </div>
                             
-                            {/* Controls Hint */}
-                            <div className="mt-12 text-slate-600 flex gap-4 md:gap-8 font-mono text-xs md:text-sm border-t border-slate-800 pt-8">
+                            <div className="mt-8 text-slate-600 flex gap-4 md:gap-8 font-mono text-xs md:text-sm border-t border-slate-800 pt-8">
                                 <div className="flex flex-col items-center gap-1">
-                                    <span className="border border-slate-700 rounded px-2 py-1 bg-slate-900">WASD / ⬆⬇⬅➡</span>
+                                    <span className="border border-slate-700 rounded px-2 py-1 bg-slate-900">WASD</span>
                                     <span>移动</span>
                                 </div>
                                 <div className="flex flex-col items-center gap-1">
                                     <span className="border border-slate-700 rounded px-2 py-1 bg-slate-900 min-w-[3rem] text-center">SPACE</span>
                                     <span>闪避</span>
                                 </div>
-                                {isTouch && (
-                                    <div className="flex flex-col items-center gap-1 text-amber-600/70">
-                                        <span className="border border-amber-900/30 rounded px-2 py-1">触摸屏</span>
-                                        <span>已启用摇杆</span>
-                                    </div>
-                                )}
                             </div>
-
-                            {hasSavedAssets ? (
-                                <span className="absolute bottom-4 text-green-700 text-xs animate-pulse">
-                                    已加载本地江湖绘卷 (Assets Loaded)
-                                </span>
-                            ) : (
-                                assets.player && <span className="absolute bottom-4 text-slate-700 text-xs">默认素材就绪</span>
-                            )}
                         </div>
                     </div>
                 )}
 
-                {/* Asset Generation Loading */}
                 {gameState === GameStateEnum.ASSET_GEN && (
                     <div className="absolute inset-0 bg-black flex flex-col items-center justify-center z-50">
                         <div className="w-20 h-20 border-t-4 border-r-2 border-red-800 rounded-full animate-spin mb-6 opacity-80"></div>
@@ -357,20 +320,18 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Level Up Screen */}
                 {gameState === GameStateEnum.LEVEL_UP && (
                     <div className="absolute inset-0 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center z-50 p-4">
                         <h2 className="text-4xl md:text-5xl font-ink text-amber-500 mb-2 text-shadow-ink animate-bounce">境界突破</h2>
                         <p className="text-slate-400 font-serif mb-6 md:mb-10">请选择一本秘籍修炼</p>
                         
                         <div className="flex flex-col md:flex-row gap-4 md:gap-6 w-full max-w-5xl justify-center items-stretch h-full md:h-96 overflow-y-auto md:overflow-visible pb-10 md:pb-0">
-                            {upgrades.map((u, idx) => (
+                            {upgrades.map((u) => (
                                 <div 
                                     key={u.id}
                                     onClick={() => selectUpgrade(u)}
                                     className="group relative flex-1 min-h-[200px] cursor-pointer perspective-1000 shrink-0"
                                 >
-                                    {/* Card Body */}
                                     <div className={`
                                         h-full flex flex-col items-center p-6 md:py-12 border-4 
                                         transition-all duration-300 transform group-hover:-translate-y-4 group-hover:rotate-1
@@ -380,17 +341,13 @@ const App: React.FC = () => {
                                         bg-paper-pattern
                                     `}>
                                         <div className="text-5xl md:text-6xl mb-4 md:mb-6 opacity-80 group-hover:scale-110 transition-transform">{u.icon || '⚔️'}</div>
-                                        
                                         <h3 className={`text-2xl md:text-3xl font-ink mb-2 md:mb-4 text-center ${u.rarity === 'LEGENDARY' ? 'text-amber-500' : 'text-slate-200'}`}>
                                             {u.name}
                                         </h3>
-                                        
                                         <div className="w-full h-px bg-current opacity-20 mb-4"></div>
-                                        
                                         <p className={`text-center font-serif text-sm md:text-base leading-relaxed ${u.rarity === 'LEGENDARY' ? 'text-amber-200/70' : 'text-slate-400'}`}>
                                             {u.description}
                                         </p>
-
                                         <div className="absolute bottom-4 right-4 opacity-20 transform -rotate-12 border-2 border-red-500 text-red-500 p-1 font-ink text-xs rounded">
                                             {u.rarity === 'LEGENDARY' ? '绝世' : (u.rarity === 'RARE' ? '稀有' : '普通')}
                                         </div>
@@ -401,7 +358,6 @@ const App: React.FC = () => {
                     </div>
                 )}
 
-                {/* Game Over Screen */}
                 {gameState === GameStateEnum.GAME_OVER && (
                     <div className="absolute inset-0 bg-[#0f0f0f] flex flex-col items-center justify-center z-50">
                         <div className="relative border-y-4 border-red-900/50 py-12 w-full flex flex-col items-center bg-red-900/10">
@@ -412,11 +368,7 @@ const App: React.FC = () => {
                                 <span className="text-slate-400 font-serif uppercase tracking-widest text-sm">最终得分</span>
                                 <span className="text-5xl font-mono text-white">{score}</span>
                             </div>
-                            
-                            <button 
-                                onClick={() => setGameState(GameStateEnum.MENU)}
-                                className="px-12 py-4 bg-slate-100 text-black font-ink text-3xl border-2 border-slate-400 hover:bg-white hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                            >
+                            <button onClick={() => setGameState(GameStateEnum.MENU)} className="px-12 py-4 bg-slate-100 text-black font-ink text-3xl border-2 border-slate-400 hover:bg-white hover:scale-105 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
                                 重入江湖
                             </button>
                         </div>
