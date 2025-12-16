@@ -176,7 +176,6 @@ export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK): Promis
     const styleDesc = getStylePrompt(style);
     
     // Updated Prompts: Strongly request a flat, distinct background color.
-    // We request Lime Green (#00FF00) as primary, but our code can now handle if AI ignores it.
     const charBg = "isolated on flat solid lime green background (RGB 0,255,0), no shadows, sharp silhouette, full body";
     const projBg = "glowing energy, isolated on pure black background, high contrast";
 
@@ -207,11 +206,13 @@ export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK): Promis
         }
     };
 
+    // CRITICAL UPDATE: Enforce "facing right side profile" to match game engine physics (0 degrees = right)
+    // Also enforce "pointing right" for projectiles to avoid them flying sideways.
     const [player, enemyPeasant, enemyBoss, projectileSword] = await Promise.all([
-        generate("heroic wuxia swordsman, holding sword, dynamic action pose", charBg, true),
-        generate("creepy zombie minion, ragged clothes, hunchback", charBg, true),
-        generate("giant demon warlord general, heavy armor, holding massive weapon", charBg, true),
-        generate("magical flying sword, glowing aura", projBg, true, true)
+        generate("heroic wuxia swordsman, holding sword, dynamic action pose, full body, facing right side profile", charBg, true),
+        generate("creepy zombie minion, ragged clothes, hunchback, full body, facing right side profile", charBg, true),
+        generate("giant demon warlord general, heavy armor, holding massive weapon, full body, facing right side profile", charBg, true),
+        generate("magical flying sword, glowing aura, horizontal, pointing right", projBg, true, true)
     ]);
 
     return {
