@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>血影武侠 - Blood Shadow Wuxia</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Serif+SC:wght@400;700&display=swap');
+      
+      body {
+        font-family: 'Noto Serif SC', serif;
+        background-color: #1a1a1a;
+        color: #e5e5e5;
+        overflow: hidden;
+        touch-action: none;
+      }
+      
+      .font-ink {
+        font-family: 'Ma Shan Zheng', cursive;
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #262626; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #888; 
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #555; 
+      }
+
+      /* Ink Wash Effect Utilities */
+      .ink-border {
+        border: 2px solid rgba(0,0,0,0.8);
+        box-shadow: 0 0 10px rgba(0,0,0,0.5), inset 0 0 20px rgba(0,0,0,0.2);
+      }
+
+      .text-shadow-ink {
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.5);
+      }
+      
+      .text-shadow-red {
+        text-shadow: 0 0 10px rgba(220, 38, 38, 0.8), 2px 2px 0px rgba(0,0,0,1);
+      }
+      
+      .blood-pulse {
+        animation: pulse-red 2s infinite;
+      }
+      
+      @keyframes pulse-red {
+        0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+        70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+      }
+
+      /* Paper Texture Pattern */
+      .bg-paper-pattern {
+        background-image: repeating-linear-gradient(0deg, transparent, transparent 19px, #e5e5e5 20px), repeating-linear-gradient(90deg, transparent, transparent 19px, #e5e5e5 20px);
+        background-size: 20px 20px;
+        background-color: #f5f5f0;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.33.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
