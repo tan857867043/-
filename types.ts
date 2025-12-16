@@ -6,7 +6,8 @@ export enum GameStateEnum {
     PAUSED = 'PAUSED',
     LEVEL_UP = 'LEVEL_UP',
     GAME_OVER = 'GAME_OVER',
-    ASSET_GEN = 'ASSET_GEN'
+    ASSET_GEN = 'ASSET_GEN',
+    CHEST_REWARD = 'CHEST_REWARD'
 }
 
 // Art Styles
@@ -46,6 +47,8 @@ export interface Player extends Entity {
     frenzyTimer: number;
     stats: PlayerStats;
     weapons: Weapon[];
+    dashTimer: number; // Current cooldown frames
+    maxDashTimer: number; // Max cooldown frames
 }
 
 export interface PlayerStats {
@@ -57,9 +60,11 @@ export interface PlayerStats {
 }
 
 export enum EnemyType {
-    PEASANT = 'PEASANT', // Weak
-    CULTIST = 'CULTIST', // Medium
-    BOSS = 'BOSS' // Hard
+    PEASANT = 'PEASANT', // Weak, melee
+    CULTIST = 'CULTIST', // Medium, melee
+    CHARGER = 'CHARGER', // Fast, charge attack
+    ARCHER = 'ARCHER',   // Ranged, runaway
+    BOSS = 'BOSS'        // Hard
 }
 
 export interface Enemy extends Entity {
@@ -68,6 +73,11 @@ export interface Enemy extends Entity {
     maxHp: number;
     damage: number;
     speed: number;
+    isElite?: boolean; // New: Elite modifier
+    // AI State
+    state?: 'CHASING' | 'CHARGING' | 'PREPARING' | 'COOLDOWN' | 'FLEEING';
+    stateTimer?: number;
+    targetPos?: Vector2D; // For locking on charges
 }
 
 export interface Projectile extends Entity {
@@ -79,6 +89,7 @@ export interface Projectile extends Entity {
     isOrbiting?: boolean; // For rotating shields/swords
     orbitAngle?: number;
     orbitDistance?: number;
+    owner: 'PLAYER' | 'ENEMY'; // Who fired it
 }
 
 export interface Drop extends Entity {
@@ -91,6 +102,8 @@ export enum WeaponType {
     SWORD_AURA = 'SWORD_AURA', // Orbiting swords
     PALM_STRIKE = 'PALM_STRIKE', // Projectile forward
     SOUND_WAVE = 'SOUND_WAVE', // Area pulse
+    GOLDEN_BELL = 'GOLDEN_BELL', // Defensive Aura
+    SPIRIT_DAGGER = 'SPIRIT_DAGGER', // Auto-targeting projectile
 }
 
 export interface Weapon {
@@ -130,11 +143,14 @@ export interface VisualEffect {
     id: string;
     x: number;
     y: number;
-    type: 'DASH_GHOST' | 'HIT_SPARK';
+    type: 'DASH_GHOST' | 'HIT_SPARK' | 'WARNING_LINE' | 'SHOCKWAVE';
     life: number;
     rotation?: number;
     sprite?: string;
     scaleX?: number;
+    width?: number; // For warning lines
+    length?: number;
+    radius?: number; // For shockwaves
 }
 
 // Asset Generation
@@ -142,6 +158,9 @@ export interface GeneratedAssets {
     currentStyle: ArtStyle; // Track style for rendering modes
     player: string | null;
     enemyPeasant: string | null;
+    enemyCultist: string | null;
+    enemyCharger: string | null;
+    enemyArcher: string | null;
     enemyBoss: string | null;
     background: string | null;
     projectileSword: string | null;

@@ -128,15 +128,42 @@ const processImage = (base64Data: string, style: ArtStyle, isSprite: boolean, is
         img.crossOrigin = "Anonymous";
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            const targetWidth = isSprite ? 256 : 512;
-            const scale = targetWidth / img.width;
+            
+            // NOTE: We MUST force square aspect ratio for sprites (player/enemies) 
+            // so they are not interpreted as 2-frame sprite sheets by the renderer 
+            // if the generated image happens to be landscape.
+            let targetWidth = 512;
+            let targetHeight = 512;
+
+            if (isSprite) {
+                targetWidth = 256;
+                targetHeight = 256;
+            }
+
+            // If it's not a sprite (e.g. background), maintain aspect or specific width
+            if (!isSprite) {
+                targetWidth = 512;
+                const scale = targetWidth / img.width;
+                targetHeight = img.height * scale;
+            }
+
             canvas.width = targetWidth;
-            canvas.height = img.height * scale;
+            canvas.height = targetHeight;
             
             const ctx = canvas.getContext('2d');
             if (!ctx) { resolve(base64Data); return; }
 
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            if (isSprite) {
+                // Center and Contain in Square
+                const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+                const drawW = img.width * scale;
+                const drawH = img.height * scale;
+                const offsetX = (targetWidth - drawW) / 2;
+                const offsetY = (targetHeight - drawH) / 2;
+                ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+            } else {
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
 
             if (isProjectile) {
                 processBlackBackground(ctx, canvas.width, canvas.height);
@@ -200,9 +227,12 @@ export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK): Promis
         }
     };
 
-    const [player, enemyPeasant, enemyBoss, projectileSword] = await Promise.all([
+    const [player, enemyPeasant, enemyCultist, enemyCharger, enemyArcher, enemyBoss, projectileSword] = await Promise.all([
         generate("heroic wuxia swordsman, holding sword, dynamic action pose, full body, facing right side profile", charBg, true),
-        generate("creepy zombie minion, ragged clothes, hunchback, full body, facing right side profile", charBg, true),
+        generate("weak zombie minion, ragged clothes, hunchback, full body, facing right side profile", charBg, true),
+        generate("evil cultist mage, wearing robes and tall hat, holding a staff, mysterious, full body, facing right side profile", charBg, true),
+        generate("wild boar beast man, muscular, charging pose, heavy breathing, full body, facing right side profile", charBg, true),
+        generate("skeleton assassin archer, holding a bow, aiming, nimble, full body, facing right side profile", charBg, true),
         generate("giant demon warlord general, heavy armor, holding massive weapon, full body, facing right side profile", charBg, true),
         generate("magical flying sword, glowing aura, horizontal, pointing right", projBg, true, true)
     ]);
@@ -211,6 +241,9 @@ export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK): Promis
         currentStyle: style,
         player,
         enemyPeasant,
+        enemyCultist,
+        enemyCharger,
+        enemyArcher,
         enemyBoss,
         background: null,
         projectileSword

@@ -1,8 +1,8 @@
 
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { GameStateEnum, Player, Enemy, Projectile, Drop, Vector2D, WeaponType, GeneratedAssets, EnemyType, DamageText, VisualEffect, ArtStyle } from '../types';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_BASE_SPEED, ENEMY_SPAWN_RATE, MAX_ENEMIES, WEAPON_DEFAULTS, FRENZY_THRESHOLD, FRENZY_DRAIN_RATE, PLAYER_PICKUP_RANGE } from '../constants';
-import { spawnEnemy, createProjectile, checkCollision, normalizeVector, getDistance } from '../services/gameLogic';
+import { CANVAS_WIDTH, CANVAS_HEIGHT, PLAYER_BASE_SPEED, ENEMY_SPAWN_RATE, MAX_ENEMIES, WEAPON_DEFAULTS, FRENZY_THRESHOLD, FRENZY_DRAIN_RATE, PLAYER_PICKUP_RANGE, PLAYER_DASH_COOLDOWN } from '../constants';
+import { spawnEnemy, createProjectile, checkCollision, normalizeVector, getDistance, updateEnemyBehavior } from '../services/gameLogic';
 import Joystick from './Joystick';
 
 interface GameCanvasProps {
@@ -13,6 +13,7 @@ interface GameCanvasProps {
     assets: GeneratedAssets;
     playerRef: React.MutableRefObject<Player>; // Shared ref for UI updates
     isTouchDevice: boolean;
+    onChestPickup: () => void;
 }
 
 // Helper to manage loaded images
@@ -21,7 +22,16 @@ const useImagePreloader = (assets: GeneratedAssets) => {
 
     useEffect(() => {
         const images: Record<string, HTMLImageElement> = {};
-        const keys: (keyof GeneratedAssets)[] = ['player', 'enemyPeasant', 'enemyBoss', 'background', 'projectileSword'];
+        const keys: (keyof GeneratedAssets)[] = [
+            'player', 
+            'enemyPeasant', 
+            'enemyCultist',
+            'enemyCharger',
+            'enemyArcher',
+            'enemyBoss', 
+            'background', 
+            'projectileSword'
+        ];
         
         keys.forEach(key => {
             const src = assets[key];
@@ -37,7 +47,7 @@ const useImagePreloader = (assets: GeneratedAssets) => {
     return loadedImages;
 };
 
-const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLevelUp, onGameOver, assets, playerRef, isTouchDevice }) => {
+const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLevelUp, onGameOver, assets, playerRef, isTouchDevice, onChestPickup }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const requestRef = useRef<number>(0);
     const loadedImages = useImagePreloader(assets);
@@ -50,6 +60,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
     // Visual Effects Refs
     const damageTextsRef = useRef<DamageText[]>([]);
     const visualEffectsRef = useRef<VisualEffect[]>([]);
+    const screenShakeRef = useRef<number>(0);
 
     // Cache the background pattern
     const bgPatternRef = useRef<CanvasPattern | null>(null);
@@ -61,7 +72,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
     // Logic Timers
     const frameCountRef = useRef(0);
     const scoreRef = useRef(0);
-    const lastDashTime = useRef(0);
 
     // Create pattern when background asset changes
     useEffect(() => {
@@ -108,7 +118,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                     baseCooldown: WEAPON_DEFAULTS[WeaponType.SWORD_AURA].cooldown,
                     damage: WEAPON_DEFAULTS[WeaponType.SWORD_AURA].damage,
                     area: 1
-                }]
+                }],
+                dashTimer: 0,
+                maxDashTimer: PLAYER_DASH_COOLDOWN
             };
             enemiesRef.current = [];
             projectilesRef.current = [];
@@ -116,6 +128,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             damageTextsRef.current = [];
             visualEffectsRef.current = [];
             scoreRef.current = 0;
+            screenShakeRef.current = 0;
         }
     }, [gameState]);
 
@@ -124,8 +137,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         const handleKeyDown = (e: KeyboardEvent) => {
             if (gameState !== GameStateEnum.PLAYING) return;
             keysRef.current[e.code] = true;
-            if (e.code === 'Space') {
+            
+            if (e.code === 'Space' || e.code === 'KeyE') {
                 handleDash();
+            }
+            if (e.code === 'Escape') {
+                setGameState(GameStateEnum.PAUSED);
             }
         };
         const handleKeyUp = (e: KeyboardEvent) => {
@@ -183,6 +200,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         const projectiles = projectilesRef.current;
         const drops = dropsRef.current;
 
+        // --- 0. Systems Update ---
+        if (screenShakeRef.current > 0) {
+            screenShakeRef.current *= 0.9;
+            if (screenShakeRef.current < 0.5) screenShakeRef.current = 0;
+        }
+        if (player.dashTimer > 0) player.dashTimer--;
+
         // --- 1. Player Movement ---
         const moveVec = getCombinedInputVector();
         
@@ -204,40 +228,83 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         }
 
         // --- 2. Spawning Enemies ---
+        // Normal Spawns
         const spawnRate = Math.max(5, ENEMY_SPAWN_RATE - Math.floor(scoreRef.current / 500));
         if (frameCountRef.current % spawnRate === 0 && enemies.length < MAX_ENEMIES) {
-            const isBoss = scoreRef.current > 0 && scoreRef.current % 1000 === 0 && !enemies.some(e => e.type === EnemyType.BOSS);
-            enemies.push(spawnEnemy(player.pos, isBoss ? EnemyType.BOSS : (Math.random() > 0.8 ? EnemyType.CULTIST : EnemyType.PEASANT)));
+            const isBoss = scoreRef.current > 0 && scoreRef.current % 1500 === 0 && !enemies.some(e => e.type === EnemyType.BOSS);
+            enemies.push(spawnEnemy(player.pos, isBoss ? EnemyType.BOSS : undefined, false));
         }
 
-        // --- 3. Enemy Logic ---
-        enemies.forEach(enemy => {
-            const dx = player.pos.x - enemy.pos.x;
-            const dy = player.pos.y - enemy.pos.y;
-            const dir = normalizeVector({ x: dx, y: dy });
-            
-            enemy.pos.x += dir.x * enemy.speed;
-            enemy.pos.y += dir.y * enemy.speed;
-            
-            // Enemy facing
-            if (dx < 0) enemy.rotation = Math.PI;
-            else enemy.rotation = 0;
+        // Elite Spawns (Every 30 seconds ~ 1800 frames)
+        if (frameCountRef.current % 1800 === 0 && scoreRef.current > 100) {
+             // Spawn a guaranteed Elite
+             enemies.push(spawnEnemy(player.pos, undefined, true));
+             // Visual warning
+             visualEffectsRef.current.push({
+                 id: Math.random().toString(),
+                 x: player.pos.x, y: player.pos.y - 100,
+                 type: 'HIT_SPARK', // Reuse for now
+                 life: 60
+             });
+        }
 
-            // Collision with Player
+        // --- 3. Enemy Logic (AI) ---
+        enemies.forEach(enemy => {
+            // Handle movement, state changes, and shooting
+            const prevProjectilesLen = projectiles.length;
+            const enemyProjectiles = updateEnemyBehavior(enemy, player, visualEffectsRef.current);
+            projectiles.push(...enemyProjectiles);
+            
+            // If BOSS created shockwave, shake screen
+            if (enemy.type === EnemyType.BOSS && projectiles.length > prevProjectilesLen && projectiles[projectiles.length-1].radius > 50) {
+                 screenShakeRef.current = 15;
+            }
+
+            // Collision with Player (Contact Damage)
             if (checkCollision(player, enemy)) {
                 if (frameCountRef.current % 30 === 0) { 
                     player.hp -= enemy.damage;
                     spawnDamageText(player.pos.x, player.pos.y, enemy.damage, false);
+                    screenShakeRef.current = 5; // Light shake on hurt
                 }
             }
         });
 
         // --- 4. Weapon Cooldowns & Firing ---
         player.weapons.forEach(w => {
+            // Special handling for Golden Bell (Passive Tick)
+            if (w.type === WeaponType.GOLDEN_BELL) {
+                const tickRate = WEAPON_DEFAULTS[WeaponType.GOLDEN_BELL].tickRate;
+                if (frameCountRef.current % tickRate === 0) {
+                     const radius = WEAPON_DEFAULTS[WeaponType.GOLDEN_BELL].area * w.area * player.stats.area;
+                     const dmg = w.damage * player.stats.might;
+                     
+                     enemies.forEach(e => {
+                         if (getDistance(player.pos, e.pos) < radius + e.radius) {
+                             e.hp -= dmg;
+                             // Push back
+                             const dx = e.pos.x - player.pos.x;
+                             const dy = e.pos.y - player.pos.y;
+                             const dist = Math.sqrt(dx*dx + dy*dy);
+                             if (dist > 0) {
+                                 e.pos.x += (dx/dist) * 5;
+                                 e.pos.y += (dy/dist) * 5;
+                             }
+                             // Visual Spark
+                             if (Math.random() < 0.3) {
+                                 spawnDamageText(e.pos.x, e.pos.y, dmg, false);
+                             }
+                         }
+                     });
+                }
+                return; // Golden bell is not a standard projectile weapon
+            }
+
             if (w.cooldownTimer > 0) {
                 w.cooldownTimer -= player.stats.cooldown;
             } else {
-                const newProjs = createProjectile(player, w.type);
+                // Pass enemies to projectile creation for targeting
+                const newProjs = createProjectile(player, w.type, enemies);
                 projectiles.push(...newProjs);
                 w.cooldownTimer = w.baseCooldown;
             }
@@ -259,25 +326,38 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
 
             p.duration--;
 
-            for (const enemy of enemies) {
-                if (p.hitIds.has(enemy.id)) continue;
-                if (checkCollision(p, enemy)) {
-                    enemy.hp -= p.damage;
-                    p.hitIds.add(enemy.id);
-                    p.pierce--;
-                    
-                    const isCrit = Math.random() < 0.1; // 10% base crit
-                    const finalDamage = isCrit ? p.damage * 2 : p.damage;
-                    
-                    spawnDamageText(enemy.pos.x, enemy.pos.y, finalDamage, isCrit);
-                    
-                    // Knockback
-                    const kbDir = normalizeVector({ x: enemy.pos.x - p.pos.x, y: enemy.pos.y - p.pos.y });
-                    enemy.pos.x += kbDir.x * 10;
-                    enemy.pos.y += kbDir.y * 10;
+            // Handle Collisions
+            if (p.owner === 'PLAYER') {
+                // Check Enemy Collisions
+                for (const enemy of enemies) {
+                    if (p.hitIds.has(enemy.id)) continue;
+                    if (checkCollision(p, enemy)) {
+                        enemy.hp -= p.damage;
+                        p.hitIds.add(enemy.id);
+                        p.pierce--;
+                        
+                        const isCrit = Math.random() < 0.1; // 10% base crit
+                        const finalDamage = isCrit ? p.damage * 2 : p.damage;
+                        
+                        spawnDamageText(enemy.pos.x, enemy.pos.y, finalDamage, isCrit);
+                        
+                        // Knockback
+                        const kbDir = normalizeVector({ x: enemy.pos.x - p.pos.x, y: enemy.pos.y - p.pos.y });
+                        enemy.pos.x += kbDir.x * 10;
+                        enemy.pos.y += kbDir.y * 10;
+                    }
                 }
+            } else if (p.owner === 'ENEMY') {
+                 // Check Player Collision
+                 if (checkCollision(p, player)) {
+                     player.hp -= p.damage;
+                     spawnDamageText(player.pos.x, player.pos.y, p.damage, false);
+                     screenShakeRef.current = 5;
+                     p.pierce = 0; // Destroy projectile
+                 }
             }
 
+            // Cleanup
             if (p.duration <= 0 || p.pierce <= 0 || 
                 (!p.isOrbiting && (p.pos.x < -100 || p.pos.x > CANVAS_WIDTH + 100 || p.pos.y < -100 || p.pos.y > CANVAS_HEIGHT + 100))) {
                 projectiles.splice(i, 1);
@@ -287,15 +367,21 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         // --- 6. Cleanup Dead Enemies ---
         for (let i = enemies.length - 1; i >= 0; i--) {
             if (enemies[i].hp <= 0) {
+                // Determine drop
+                let dropType: 'BLOOD' | 'CHEST' = 'BLOOD';
+                if (enemies[i].isElite || enemies[i].type === EnemyType.BOSS) {
+                    dropType = 'CHEST';
+                }
+
                 drops.push({
                     id: Math.random().toString(),
                     pos: { ...enemies[i].pos },
-                    radius: 5,
+                    radius: dropType === 'CHEST' ? 15 : 5,
                     value: enemies[i].type === EnemyType.BOSS ? 50 : (enemies[i].type === EnemyType.CULTIST ? 5 : 1),
-                    type: 'BLOOD',
+                    type: dropType,
                     rotation: 0
                 });
-                scoreRef.current += 10;
+                scoreRef.current += enemies[i].isElite ? 100 : 10;
                 enemies.splice(i, 1);
             }
         }
@@ -304,8 +390,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         const magnetRange = PLAYER_PICKUP_RANGE * player.stats.magnet;
         for (let i = drops.length - 1; i >= 0; i--) {
             const drop = drops[i];
-            const dist = getDistance(player.pos, drop.pos);
             
+            // Chests are not magnetized, must walk over
+            if (drop.type === 'CHEST') {
+                if (getDistance(player.pos, drop.pos) < player.radius + drop.radius) {
+                    drops.splice(i, 1);
+                    onChestPickup();
+                }
+                continue;
+            }
+
+            const dist = getDistance(player.pos, drop.pos);
             if (dist < magnetRange) {
                 const dir = normalizeVector({ x: player.pos.x - drop.pos.x, y: player.pos.y - drop.pos.y });
                 drop.pos.x += dir.x * 12; // Fast suck
@@ -334,6 +429,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         // --- 9. Update Visual Effects ---
         for (let i = visualEffectsRef.current.length - 1; i >= 0; i--) {
             const vfx = visualEffectsRef.current[i];
+            
+            if (vfx.type === 'SHOCKWAVE') {
+                vfx.radius = (vfx.radius || 10) + 5;
+            }
+
             vfx.life--;
             if (vfx.life <= 0) {
                 visualEffectsRef.current.splice(i, 1);
@@ -388,11 +488,33 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             
             // Base width on radius (diameter roughly)
             const drawWidth = radius * 5;
-            const drawHeight = drawWidth / aspect;
-
-            const yOffset = -drawHeight * 0.75; 
             
-            ctx.drawImage(img, -drawWidth / 2, yOffset, drawWidth, drawHeight);
+            // Check for Sprite Sheet (Wide image)
+            // INCREASED THRESHOLD: Default SVGs are 2.0 ratio. AI Landscape often < 1.8. 
+            // This prevents single images from being treated as 2-frame sheets.
+            const isSpriteSheet = img.naturalWidth > img.naturalHeight * 1.8;
+
+            if (isSpriteSheet) {
+                 const frameCount = img.naturalWidth > img.naturalHeight * 3 ? 4 : 2;
+                 const frameWidth = img.naturalWidth / frameCount;
+                 const frameHeight = img.naturalHeight;
+                 const animSpeed = 8;
+                 const currentFrame = Math.floor(frameCountRef.current / animSpeed) % frameCount;
+                 
+                 const sheetAspect = frameWidth / frameHeight;
+                 const drawHeight = drawWidth / sheetAspect;
+                 const yOffset = -drawHeight * 0.75;
+                 
+                 ctx.drawImage(
+                    img, 
+                    currentFrame * frameWidth, 0, frameWidth, frameHeight, 
+                    -drawWidth / 2, yOffset, drawWidth, drawHeight
+                );
+            } else {
+                const drawHeight = drawWidth / aspect;
+                const yOffset = -drawHeight * 0.75; 
+                ctx.drawImage(img, -drawWidth / 2, yOffset, drawWidth, drawHeight);
+            }
             
             // Reset blend mode
             ctx.globalCompositeOperation = 'source-over';
@@ -410,6 +532,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         // Clear
         ctx.fillStyle = '#1a1a1a';
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+
+        // Apply Screen Shake
+        const shakeX = (Math.random() - 0.5) * screenShakeRef.current;
+        const shakeY = (Math.random() - 0.5) * screenShakeRef.current;
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
 
         // Background (Pattern Tiling or Solid Color)
         if (bgPatternRef.current) {
@@ -433,39 +561,71 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
              for(let i=0; i<CANVAS_HEIGHT; i+=50) ctx.fillRect(0, i, CANVAS_WIDTH, 1);
         }
 
-        // Drops - Draw as floating spirits/orbs
+        // Drops
         dropsRef.current.forEach(drop => {
             const bobOffset = Math.sin(frameCountRef.current * 0.1 + parseFloat(drop.id)) * 3;
             ctx.save();
             ctx.translate(drop.pos.x, drop.pos.y + bobOffset);
             
-            // Inner Core
-            ctx.beginPath();
-            ctx.fillStyle = '#dc2626';
-            ctx.arc(0, 0, drop.radius, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Glow
-            ctx.shadowColor = '#dc2626';
-            ctx.shadowBlur = 10;
-            ctx.strokeStyle = '#fca5a5';
-            ctx.lineWidth = 1;
-            ctx.stroke();
+            if (drop.type === 'CHEST') {
+                // Gold Chest
+                ctx.shadowColor = '#fbbf24';
+                ctx.shadowBlur = 15;
+                ctx.fillStyle = '#d97706';
+                ctx.fillRect(-15, -15, 30, 25);
+                ctx.strokeStyle = '#fef3c7';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-15, -15, 30, 25);
+                // Lid
+                ctx.fillStyle = '#f59e0b';
+                ctx.beginPath();
+                ctx.arc(0, -15, 15, Math.PI, 0);
+                ctx.fill();
+                ctx.stroke();
+            } else {
+                // Blood Orb
+                ctx.beginPath();
+                if (drop.value >= 50) ctx.fillStyle = '#f59e0b'; // Gold for Boss/Elite
+                else if (drop.value >= 5) ctx.fillStyle = '#a855f7'; // Purple for Cultist
+                else ctx.fillStyle = '#dc2626'; // Red for Peasant
+                
+                ctx.arc(0, 0, drop.radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.shadowColor = ctx.fillStyle;
+                ctx.shadowBlur = 10;
+                ctx.strokeStyle = '#fca5a5';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
             
             ctx.restore();
         });
 
-        // Visual Effects (Dash Trails)
+        // Visual Effects
         visualEffectsRef.current.forEach(vfx => {
             if (vfx.type === 'DASH_GHOST' && loadedImages.player) {
                 ctx.save();
                 ctx.globalAlpha = (vfx.life / 20) * 0.5; // Fade out
                 ctx.translate(vfx.x, vfx.y);
                 ctx.scale(vfx.scaleX || 1, 1);
-                
-                // Draw ghost with same logic as player
                 drawSprite(ctx, loadedImages.player, 15, true);
-                
+                ctx.restore();
+            } else if (vfx.type === 'WARNING_LINE') {
+                ctx.save();
+                ctx.translate(vfx.x, vfx.y);
+                ctx.rotate(vfx.rotation || 0);
+                ctx.fillStyle = `rgba(220, 38, 38, ${(vfx.life / 40) * 0.5})`; // Fading red
+                ctx.fillRect(0, -(vfx.width||20)/2, vfx.length || 300, vfx.width||20);
+                ctx.restore();
+            } else if (vfx.type === 'SHOCKWAVE') {
+                ctx.save();
+                ctx.translate(vfx.x, vfx.y);
+                ctx.beginPath();
+                ctx.arc(0, 0, vfx.radius || 10, 0, Math.PI * 2);
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = `rgba(220, 38, 38, ${(vfx.life / 40)})`;
+                ctx.stroke();
                 ctx.restore();
             }
         });
@@ -481,17 +641,57 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             const bobY = Math.sin(frameCountRef.current * 0.15 + parseFloat(enemy.id)) * 2;
             ctx.translate(0, bobY);
 
+            // State Effects
+            if (enemy.state === 'PREPARING') {
+                 // Shake
+                 const shake = Math.sin(frameCountRef.current * 2) * 2;
+                 ctx.translate(shake, 0);
+            }
+
+            // Elite Aura
+            if (enemy.isElite) {
+                ctx.beginPath();
+                ctx.arc(0, 0, enemy.radius + 5, 0, Math.PI * 2);
+                ctx.strokeStyle = '#a855f7'; // Purple
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
             // Flip if facing left
             if (enemy.rotation === Math.PI) {
                 ctx.scale(-1, 1);
             }
             
+            // --- SELECT ENEMY SPRITE ---
             let spriteImg = loadedImages.enemyPeasant;
             if (enemy.type === EnemyType.BOSS) spriteImg = loadedImages.enemyBoss;
+            else if (enemy.type === EnemyType.CULTIST) spriteImg = loadedImages.enemyCultist;
+            else if (enemy.type === EnemyType.CHARGER) spriteImg = loadedImages.enemyCharger;
+            else if (enemy.type === EnemyType.ARCHER) spriteImg = loadedImages.enemyArcher;
             
+            // Removed previous Tinting logic as we now have specific sprites
+
+            // Elite Scale
+            if (enemy.isElite) {
+                ctx.scale(1.3, 1.3);
+            }
+
             drawSprite(ctx, spriteImg, enemy.radius, false);
             
+            ctx.filter = 'none';
             ctx.restore();
+
+            // Draw HP Bar for Elites and Bosses
+            if (enemy.isElite || enemy.type === EnemyType.BOSS) {
+                const hpWidth = enemy.radius * 2;
+                const hpY = -enemy.radius * 1.5 - 10;
+                ctx.fillStyle = '#000';
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth, 4);
+                ctx.fillStyle = '#dc2626';
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth * (enemy.hp / enemy.maxHp), 4);
+            }
         });
 
         // Player
@@ -499,6 +699,31 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         ctx.save();
         ctx.translate(player.pos.x, player.pos.y);
         
+        // Golden Bell Visual
+        const bellWeapon = player.weapons.find(w => w.type === WeaponType.GOLDEN_BELL);
+        if (bellWeapon) {
+             const radius = WEAPON_DEFAULTS[WeaponType.GOLDEN_BELL].area * bellWeapon.area * player.stats.area;
+             ctx.save();
+             ctx.beginPath();
+             ctx.arc(0, 0, radius, 0, Math.PI * 2);
+             ctx.fillStyle = `rgba(217, 119, 6, 0.1)`;
+             ctx.fill();
+             ctx.lineWidth = 2;
+             ctx.strokeStyle = `rgba(217, 119, 6, ${0.3 + Math.sin(frameCountRef.current * 0.1) * 0.2})`;
+             ctx.stroke();
+             // Rotating Sanskrit text effect simulated by dots
+             const dotCount = 8;
+             const angleStep = (Math.PI*2)/dotCount;
+             const rot = frameCountRef.current * 0.02;
+             for(let i=0; i<dotCount; i++) {
+                 const dx = Math.cos(rot + i*angleStep) * radius;
+                 const dy = Math.sin(rot + i*angleStep) * radius;
+                 ctx.fillStyle = '#f59e0b';
+                 ctx.fillRect(dx-2, dy-2, 4, 4);
+             }
+             ctx.restore();
+        }
+
         if (player.isFrenzy) {
             ctx.beginPath();
             ctx.strokeStyle = `rgba(220, 38, 38, ${0.5 + Math.sin(frameCountRef.current * 0.1) * 0.2})`;
@@ -509,7 +734,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
 
         drawShadow(ctx, player.radius);
         
-        // Bobbing for player
         const playerBob = Math.sin(frameCountRef.current * 0.2) * 2;
         ctx.translate(0, playerBob);
 
@@ -525,22 +749,48 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         projectilesRef.current.forEach(p => {
             ctx.save();
             ctx.translate(p.pos.x, p.pos.y);
-            ctx.rotate(p.rotation || p.orbitAngle || 0);
             
-            if (loadedImages.projectileSword && p.isOrbiting) {
-                 ctx.rotate(Math.PI / 4); 
-                 // Pass true for isProjectile to trigger Screen blend mode (for Black BG)
-                 drawSprite(ctx, loadedImages.projectileSword, 25, false, true);
-            } else {
-                ctx.fillStyle = '#0ea5e9'; 
-                if (p.damage > 20) ctx.fillStyle = '#f59e0b';
-                
-                if (p.isOrbiting) {
-                    ctx.fillRect(-15, -2, 30, 4);
-                } else {
+            // Enemy Projectile Style
+            if (p.owner === 'ENEMY') {
+                if (p.radius > 50) { 
+                    // Shockwave
                     ctx.beginPath();
-                    ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                    ctx.arc(0, 0, p.radius, 0, Math.PI*2);
+                    ctx.fillStyle = 'rgba(220,38,38,0.3)';
                     ctx.fill();
+                    ctx.lineWidth = 5;
+                    ctx.strokeStyle = '#dc2626';
+                    ctx.stroke();
+                } else {
+                    // Arrow
+                    ctx.rotate(p.rotation || 0);
+                    ctx.fillStyle = '#ef4444'; 
+                    ctx.beginPath();
+                    ctx.moveTo(10, 0);
+                    ctx.lineTo(-5, 5);
+                    ctx.lineTo(-5, -5);
+                    ctx.fill();
+                }
+            } 
+            // Player Projectile Style
+            else {
+                ctx.rotate(p.rotation || p.orbitAngle || 0);
+                
+                if (loadedImages.projectileSword && (p.isOrbiting || p.velocity)) {
+                     // For Spirit Dagger, rotate to point forward
+                     ctx.rotate(Math.PI / 4); 
+                     drawSprite(ctx, loadedImages.projectileSword, 25, false, true);
+                } else {
+                    ctx.fillStyle = '#0ea5e9'; 
+                    if (p.damage > 20) ctx.fillStyle = '#f59e0b';
+                    
+                    if (p.isOrbiting) {
+                        ctx.fillRect(-15, -2, 30, 4);
+                    } else {
+                        ctx.beginPath();
+                        ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                 }
             }
             ctx.restore();
@@ -566,6 +816,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             }
             ctx.restore();
         });
+
+        // End Shake Transform
+        ctx.restore();
     };
 
     const loop = useCallback(() => {
@@ -603,10 +856,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
     }, [loop]);
 
     const handleDash = () => {
-        const now = Date.now();
-        if (now - lastDashTime.current > 1000) { 
+        const player = playerRef.current;
+        if (player.dashTimer <= 0) { 
              const moveVec = getCombinedInputVector();
-             const player = playerRef.current;
              
              let dashX = moveVec.x;
              let dashY = moveVec.y;
@@ -618,7 +870,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
              }
 
              if (dashX !== 0 || dashY !== 0) {
-                 // Spawn ghost at start pos
                  visualEffectsRef.current.push({
                      id: Math.random().toString(),
                      x: player.pos.x,
@@ -631,7 +882,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                  player.pos.x += dashX * 100;
                  player.pos.y += dashY * 100;
                  
-                 // Spawn ghost at mid pos (interpolation)
                  visualEffectsRef.current.push({
                      id: Math.random().toString(),
                      x: player.pos.x - dashX * 50,
@@ -641,7 +891,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                      scaleX: player.rotation === Math.PI ? -1 : 1
                  });
 
-                 lastDashTime.current = now;
+                 player.dashTimer = player.maxDashTimer;
              }
         }
     };
@@ -666,9 +916,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                     <button 
                         onMouseDown={handleDash}
                         onTouchStart={handleDash}
-                        className="absolute bottom-10 right-10 w-24 h-24 rounded-full bg-slate-800/80 border-4 border-slate-500 text-white font-ink text-4xl active:scale-95 transition-transform flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.5)] z-40 md:opacity-80 hover:opacity-100"
+                        className={`absolute bottom-10 right-10 w-24 h-24 rounded-full border-4 border-slate-500 text-white font-ink text-4xl active:scale-95 transition-transform flex items-center justify-center shadow-[0_0_20px_rgba(0,0,0,0.5)] z-40 md:opacity-80 hover:opacity-100 ${playerRef.current.dashTimer > 0 ? 'bg-slate-700 opacity-50' : 'bg-slate-800/80'}`}
                     >
-                        闪
+                        {playerRef.current.dashTimer > 0 ? (
+                             <span className="text-xl font-sans">{Math.ceil(playerRef.current.dashTimer / 60)}</span>
+                        ) : '闪'}
                     </button>
                 </>
             )}
