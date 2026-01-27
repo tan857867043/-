@@ -1,6 +1,6 @@
 
 import { Vector2D, Entity, Player, Enemy, Projectile, GameStateEnum, EnemyType, WeaponType, VisualEffect } from "../types";
-import { CANVAS_WIDTH, CANVAS_HEIGHT, WEAPON_DEFAULTS } from "../constants";
+import { WORLD_WIDTH, WORLD_HEIGHT, WEAPON_DEFAULTS, ENEMY_SPAWN_DISTANCE } from "../constants";
 
 // Basic Vector Math
 export const getDistance = (v1: Vector2D, v2: Vector2D): number => {
@@ -22,10 +22,15 @@ export const checkCollision = (e1: Entity, e2: Entity): boolean => {
 // Advanced Spawning Logic
 export const spawnEnemy = (playerPos: Vector2D, specificType?: EnemyType, isElite: boolean = false): Enemy => {
     const angle = Math.random() * Math.PI * 2;
-    const distance = Math.max(CANVAS_WIDTH, CANVAS_HEIGHT) / 1.5 + 50; 
+    // Spawn just outside the view distance (approx 700px)
+    const distance = ENEMY_SPAWN_DISTANCE + (Math.random() * 200); 
     
-    const x = playerPos.x + Math.cos(angle) * distance;
-    const y = playerPos.y + Math.sin(angle) * distance;
+    let x = playerPos.x + Math.cos(angle) * distance;
+    let y = playerPos.y + Math.sin(angle) * distance;
+
+    // Clamp to World Bounds
+    x = Math.max(50, Math.min(WORLD_WIDTH - 50, x));
+    y = Math.max(50, Math.min(WORLD_HEIGHT - 50, y));
 
     // Determine type if not specified
     let type = specificType || EnemyType.PEASANT;
@@ -71,7 +76,8 @@ export const spawnEnemy = (playerPos: Vector2D, specificType?: EnemyType, isElit
         rotation: 0,
         state: 'CHASING',
         stateTimer: 0,
-        isElite
+        isElite,
+        flashTimer: 0
     };
 };
 
@@ -104,6 +110,7 @@ export const updateEnemyBehavior = (enemy: Enemy, player: Player, visualEffects:
                 x: enemy.pos.x, y: enemy.pos.y,
                 type: 'SHOCKWAVE',
                 life: 40,
+                maxLife: 40,
                 radius: 10
             });
             // Spawn shockwave projectile (short life, big area)
@@ -117,7 +124,9 @@ export const updateEnemyBehavior = (enemy: Enemy, player: Player, visualEffects:
                 pierce: 999,
                 hitIds: new Set(),
                 owner: 'ENEMY',
-                rotation: 0
+                rotation: 0,
+                trail: [],
+                visualType: 'SHOCKWAVE'
             });
         }
         
@@ -142,6 +151,7 @@ export const updateEnemyBehavior = (enemy: Enemy, player: Player, visualEffects:
                     x: enemy.pos.x, y: enemy.pos.y,
                     type: 'WARNING_LINE',
                     life: 40,
+                    maxLife: 40,
                     rotation: Math.atan2(dy, dx),
                     length: 400,
                     width: 30
@@ -207,7 +217,9 @@ export const updateEnemyBehavior = (enemy: Enemy, player: Player, visualEffects:
                 pierce: 1,
                 hitIds: new Set(),
                 owner: 'ENEMY',
-                rotation: Math.atan2(dir.y, dir.x)
+                rotation: Math.atan2(dir.y, dir.x),
+                trail: [],
+                visualType: 'ARROW'
             });
             enemy.stateTimer = 180; // Reset cooldown
         }
@@ -233,20 +245,23 @@ export const createProjectile = (player: Player, weaponType: WeaponType, enemies
         projectiles.push({
             id: Math.random().toString(),
             pos: { ...player.pos },
-            radius: 25 * weapon.area,
+            radius: 35 * weapon.area, // Larger visual radius for Palm
             damage,
             velocity: {
                 x: Math.cos(angle) * 8,
                 y: Math.sin(angle) * 8
             },
             duration: 60,
-            pierce: 1,
+            pierce: 999, // Palm hits everything in path
             hitIds: new Set(),
             rotation: angle,
-            owner: 'PLAYER'
+            owner: 'PLAYER',
+            trail: [],
+            visualType: 'PALM'
         });
     } else if (weaponType === WeaponType.SWORD_AURA) {
-        const count = 3 + weapon.level;
+        // CHANGED: Reduced initial count. Now 1 sword at level 1.
+        const count = weapon.level;
         for (let i = 0; i < count; i++) {
             projectiles.push({
                 id: Math.random().toString(),
@@ -261,13 +276,15 @@ export const createProjectile = (player: Player, weaponType: WeaponType, enemies
                 orbitAngle: (Math.PI * 2 / count) * i,
                 orbitDistance: 100 * weapon.area,
                 rotation: 0,
-                owner: 'PLAYER'
+                owner: 'PLAYER',
+                trail: [],
+                visualType: 'SWORD'
             });
         }
     } else if (weaponType === WeaponType.SPIRIT_DAGGER) {
-        // Fires at nearest enemy
+        // Fires at nearest enemy, but now stores TARGET ID for continuous tracking
         let nearest: Enemy | null = null;
-        let minD = 500; // range
+        let minD = 600; // Search range
         
         for (const e of enemies) {
             const d = getDistance(player.pos, e.pos);
@@ -277,26 +294,163 @@ export const createProjectile = (player: Player, weaponType: WeaponType, enemies
             }
         }
 
+        // Even if no enemy, fire in random direction, it will try to find one later if we implemented dynamic retargeting,
+        // but for now let's fire in moving direction or random if idle
+        let startDx = 0;
+        let startDy = 0;
+        let targetId = undefined;
+
         if (nearest) {
+            targetId = nearest.id;
             const dx = nearest.pos.x - player.pos.x;
             const dy = nearest.pos.y - player.pos.y;
             const v = normalizeVector({x: dx, y: dy});
-            const speed = WEAPON_DEFAULTS[WeaponType.SPIRIT_DAGGER].speed;
+            startDx = v.x;
+            startDy = v.y;
+        } else {
+            // Fire in facing direction
+            const rot = player.rotation || 0;
+            startDx = Math.cos(rot);
+            startDy = Math.sin(rot);
+        }
+
+        const speed = WEAPON_DEFAULTS[WeaponType.SPIRIT_DAGGER].speed;
+        
+        projectiles.push({
+            id: Math.random().toString(),
+            pos: { ...player.pos },
+            radius: 8,
+            damage: damage,
+            velocity: { x: startDx * speed, y: startDy * speed },
+            duration: 90, // Increased duration for chasing
+            pierce: 1,
+            hitIds: new Set(),
+            rotation: Math.atan2(startDy, startDx), 
+            owner: 'PLAYER',
+            trail: [],
+            visualType: 'DAGGER',
+            targetId: targetId // Assign tracking target
+        });
+    } 
+    // --- NEW WEAPONS ---
+    else if (weaponType === WeaponType.KUNAI) {
+        let targetAngle = player.rotation;
+        
+        // Try to find nearest enemy to lock on if not moving
+        if (enemies.length > 0) {
+             let nearest: Enemy | null = null;
+             let minD = 400;
+             for (const e of enemies) {
+                 const d = getDistance(player.pos, e.pos);
+                 if (d < minD) { minD = d; nearest = e; }
+             }
+             if (nearest) {
+                 targetAngle = Math.atan2(nearest.pos.y - player.pos.y, nearest.pos.x - player.pos.x);
+             }
+        }
+
+        const count = 3;
+        const spread = 0.3; // Radians
+        const speed = WEAPON_DEFAULTS[WeaponType.KUNAI].speed;
+
+        for (let i = 0; i < count; i++) {
+             const angle = targetAngle - spread + (spread * i);
+             projectiles.push({
+                id: Math.random().toString(),
+                pos: { ...player.pos },
+                radius: 6,
+                damage: damage * 0.8, 
+                velocity: { x: Math.cos(angle) * speed, y: Math.sin(angle) * speed },
+                duration: 40, 
+                pierce: 1,
+                hitIds: new Set(),
+                rotation: angle, 
+                owner: 'PLAYER',
+                trail: [],
+                visualType: 'KUNAI'
+             });
+        }
+    } else if (weaponType === WeaponType.BLADE) {
+        // Massive slow moving slash in front
+        const angle = player.rotation === Math.PI ? Math.PI : 0;
+        const speed = WEAPON_DEFAULTS[WeaponType.BLADE].speed;
+        
+        projectiles.push({
+            id: Math.random().toString(),
+            pos: { x: player.pos.x + (Math.cos(angle) * 30), y: player.pos.y },
+            radius: 40 * weapon.area,
+            damage: damage * 1.5,
+            velocity: { x: Math.cos(angle) * speed, y: 0 },
+            duration: 25, 
+            pierce: 999,
+            hitIds: new Set(),
+            rotation: angle, // For blade, rotation aligns with movement direction (0 or PI)
+            owner: 'PLAYER',
+            trail: [],
+            visualType: 'SLASH'
+        });
+    } else if (weaponType === WeaponType.GUQIN) {
+        // Drops stationary "mines" (Notes) randomly nearby
+        const count = 2;
+        for(let i=0; i<count; i++) {
+            const range = 150 * weapon.area;
+            const rx = (Math.random() - 0.5) * range;
+            const ry = (Math.random() - 0.5) * range;
             
             projectiles.push({
                 id: Math.random().toString(),
-                pos: { ...player.pos },
-                radius: 8,
+                pos: { x: player.pos.x + rx, y: player.pos.y + ry },
+                radius: 30, // Area size
                 damage: damage,
-                velocity: { x: v.x * speed, y: v.y * speed },
-                duration: 60,
-                pierce: 1,
+                velocity: { x: 0, y: 0 },
+                duration: WEAPON_DEFAULTS[WeaponType.GUQIN].duration,
+                pierce: 3, 
                 hitIds: new Set(),
-                rotation: Math.atan2(v.y, v.x) + Math.PI/4,
-                owner: 'PLAYER'
+                rotation: 0,
+                owner: 'PLAYER',
+                visualType: 'NOTE'
             });
         }
+    } else if (weaponType === WeaponType.STAFF) {
+        // Large orbiting stick, slow
+        const dist = 60 * weapon.area;
+        projectiles.push({
+             id: Math.random().toString(),
+             pos: { ...player.pos },
+             radius: 15,
+             damage: damage,
+             velocity: { x: 0, y: 0 },
+             duration: WEAPON_DEFAULTS[WeaponType.STAFF].duration,
+             pierce: 999,
+             hitIds: new Set(),
+             isOrbiting: true,
+             orbitAngle: 0,
+             orbitDistance: dist,
+             rotation: 0,
+             owner: 'PLAYER',
+             trail: [],
+             visualType: 'STAFF'
+        });
+        // Opposite end of staff
+        projectiles.push({
+             id: Math.random().toString(),
+             pos: { ...player.pos },
+             radius: 15,
+             damage: damage,
+             velocity: { x: 0, y: 0 },
+             duration: WEAPON_DEFAULTS[WeaponType.STAFF].duration,
+             pierce: 999,
+             hitIds: new Set(),
+             isOrbiting: true,
+             orbitAngle: Math.PI,
+             orbitDistance: dist,
+             rotation: 0,
+             owner: 'PLAYER',
+             trail: [],
+             visualType: 'STAFF'
+        });
     }
+
 
     return projectiles;
 };

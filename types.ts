@@ -57,6 +57,10 @@ export interface PlayerStats {
     area: number; // Area of effect
     speed: number; // Move speed
     magnet: number; // Pickup range
+    // New Stats
+    dodgeChance: number; // 0-1 percentage to avoid damage
+    frenzyEfficiency: number; // Reduces blood drain rate (0.5 means 50% slower drain)
+    expMultiplier: number; // Bonus exp gain
 }
 
 export enum EnemyType {
@@ -78,7 +82,10 @@ export interface Enemy extends Entity {
     state?: 'CHASING' | 'CHARGING' | 'PREPARING' | 'COOLDOWN' | 'FLEEING';
     stateTimer?: number;
     targetPos?: Vector2D; // For locking on charges
+    flashTimer?: number; // Visual flash on hit
 }
+
+export type ProjectileVisual = 'DEFAULT' | 'SWORD' | 'PALM' | 'NOTE' | 'SLASH' | 'DAGGER' | 'KUNAI' | 'STAFF' | 'SHOCKWAVE' | 'ARROW';
 
 export interface Projectile extends Entity {
     damage: number;
@@ -90,6 +97,9 @@ export interface Projectile extends Entity {
     orbitAngle?: number;
     orbitDistance?: number;
     owner: 'PLAYER' | 'ENEMY'; // Who fired it
+    trail?: Vector2D[]; // Motion trail history
+    visualType: ProjectileVisual; // New: Determines how it draws
+    targetId?: string; // New: For homing projectiles
 }
 
 export interface Drop extends Entity {
@@ -104,6 +114,11 @@ export enum WeaponType {
     SOUND_WAVE = 'SOUND_WAVE', // Area pulse
     GOLDEN_BELL = 'GOLDEN_BELL', // Defensive Aura
     SPIRIT_DAGGER = 'SPIRIT_DAGGER', // Auto-targeting projectile
+    // New Weapons
+    KUNAI = 'KUNAI', // Fan shaped scatter
+    GUQIN = 'GUQIN', // Stationary notes (mines)
+    BLADE = 'BLADE', // Frontal slash
+    STAFF = 'STAFF'  // Large slow rotating stick
 }
 
 export interface Weapon {
@@ -137,20 +152,26 @@ export interface DamageText {
     maxLife: number;
     velocity: Vector2D;
     isCrit: boolean;
+    text?: string; // Support for "Dodge!" text
 }
 
 export interface VisualEffect {
     id: string;
     x: number;
     y: number;
-    type: 'DASH_GHOST' | 'HIT_SPARK' | 'WARNING_LINE' | 'SHOCKWAVE';
+    type: 'DASH_GHOST' | 'HIT_SPARK' | 'WARNING_LINE' | 'SHOCKWAVE' | 'PARTICLE';
     life: number;
+    maxLife: number;
     rotation?: number;
     sprite?: string;
     scaleX?: number;
     width?: number; // For warning lines
     length?: number;
     radius?: number; // For shockwaves
+    color?: string; // For particles
+    velocity?: Vector2D; // For particles
+    friction?: number; // 0-1, slows down particles
+    gravity?: number; // Added per frame to Y velocity
 }
 
 // Asset Generation
