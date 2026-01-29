@@ -1,0 +1,46 @@
+{
+  "INK": {
+    "currentStyle": "INK",
+    "player": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cdefs%3E%3Cfilter id='ink'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3'/%3E%3CfeDisplacementMap in='SourceGraphic' scale='5'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23ink)'%3E%3Cpath d='M128,40 L160,220 L96,220 Z' fill='%23f5f5f5' stroke='%23000' stroke-width='4'/%3E%3Ccircle cx='128' cy='60' r='20' fill='%23000'/%3E%3Cpath d='M128,90 L180,120' stroke='%23000' stroke-width='6'/%3E%3Cpath d='M100,60 Q60,50 40,80' stroke='%23b91c1c' stroke-width='6' fill='none'/%3E%3C/g%3E%3C/svg%3E",
+    "enemyPeasant": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cpath d='M128,80 L100,200 L156,200 Z' fill='%23404040'/%3E%3Ccircle cx='128' cy='70' r='15' fill='%23a3a3a3'/%3E%3Ccircle cx='128' cy='70' r='3' fill='%23f00'/%3E%3C/svg%3E",
+    "enemyCultist": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cpath d='M128,40 L80,220 L176,220 Z' fill='%23581c87'/%3E%3Ccircle cx='128' cy='60' r='20' fill='%23d8b4fe'/%3E%3C/svg%3E",
+    "enemyCharger": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='60' y='100' width='136' height='80' fill='%2378350f'/%3E%3Ccircle cx='180' cy='120' r='5' fill='%23f00'/%3E%3C/svg%3E",
+    "enemyArcher": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='110' y='80' width='36' height='100' fill='%23525252'/%3E%3C/svg%3E",
+    "enemyBoss": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cpath d='M128,20 L60,240 L196,240 Z' fill='%23000' stroke='%23b91c1c' stroke-width='4'/%3E%3C/svg%3E",
+    "background": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Crect width='100%25' height='100%25' fill='%23e5e5e5'/%3E%3C/svg%3E",
+    "projectileSword": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cpath d='M10,10 L90,90' stroke='%230ea5e9' stroke-width='8'/%3E%3C/svg%3E"
+  },
+  "ANIME": {
+    "currentStyle": "ANIME",
+    "player": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cpath d='M128,40 L80,220 L176,220 Z' fill='%233b82f6' stroke='%231d4ed8' stroke-width='4'/%3E%3Ccircle cx='128' cy='60' r='35' fill='%23fcd34d'/%3E%3Cpath d='M128,40 L160,20 L100,20 Z' fill='%23fcd34d'/%3E%3C/svg%3E",
+    "enemyPeasant": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Ccircle cx='128' cy='128' r='50' fill='%23a3a3a3' stroke='%23000' stroke-width='2'/%3E%3C/svg%3E",
+    "enemyCultist": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='100' y='80' width='56' height='100' fill='%237c3aed'/%3E%3C/svg%3E",
+    "enemyCharger": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cellipse cx='128' cy='150' rx='60' ry='40' fill='%2392400e'/%3E%3C/svg%3E",
+    "enemyArcher": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='120' y='100' width='16' height='80' fill='%234b5563'/%3E%3C/svg%3E",
+    "enemyBoss": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='80' y='80' width='96' height='120' fill='%231f2937' stroke='%23ef4444' stroke-width='4'/%3E%3C/svg%3E",
+    "background": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Crect width='100%25' height='100%25' fill='%23bfdbfe'/%3E%3C/svg%3E",
+    "projectileSword": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect x='40' y='10' width='20' height='80' fill='%2360a5fa'/%3E%3C/svg%3E"
+  }, 
+  "PIXEL": {
+    "currentStyle": "PIXEL",
+    "player": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='96' y='96' width='64' height='64' fill='%23ef4444'/%3E%3Crect x='112' y='64' width='32' height='32' fill='%23fca5a5'/%3E%3C/svg%3E",
+    "enemyPeasant": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='100' y='100' width='56' height='56' fill='%23525252'/%3E%3C/svg%3E",
+    "enemyCultist": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='100' y='80' width='56' height='80' fill='%236b21a8'/%3E%3C/svg%3E",
+    "enemyCharger": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='64' y='112' width='128' height='64' fill='%2378350f'/%3E%3C/svg%3E",
+    "enemyArcher": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='112' y='96' width='32' height='64' fill='%239ca3af'/%3E%3C/svg%3E",
+    "enemyBoss": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256' shape-rendering='crispEdges'%3E%3Crect x='64' y='64' width='128' height='128' fill='%23111827'/%3E%3C/svg%3E",
+    "background": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512' shape-rendering='crispEdges'%3E%3Crect width='100%25' height='100%25' fill='%23059669'/%3E%3C/svg%3E",
+    "projectileSword": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100' shape-rendering='crispEdges'%3E%3Crect x='40' y='20' width='20' height='60' fill='%23bae6fd'/%3E%3C/svg%3E"
+  },
+  "OIL": {
+    "currentStyle": "OIL",
+    "player": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cdefs%3E%3Cfilter id='oil'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.05' numOctaves='2'/%3E%3CfeGaussianBlur stdDeviation='2'/%3E%3C/filter%3E%3C/defs%3E%3Cg filter='url(%23oil)'%3E%3Crect x='80' y='80' width='96' height='120' fill='%23b45309'/%3E%3Ccircle cx='128' cy='60' r='30' fill='%23fde047'/%3E%3C/g%3E%3C/svg%3E",
+    "enemyPeasant": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Ccircle cx='128' cy='128' r='50' fill='%2357534e' filter='blur(2px)'/%3E%3C/svg%3E",
+    "enemyCultist": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cpath d='M128,40 L80,220 L176,220 Z' fill='%23581c87' filter='blur(2px)'/%3E%3C/svg%3E",
+    "enemyCharger": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Cellipse cx='128' cy='150' rx='70' ry='50' fill='%23451a03' filter='blur(3px)'/%3E%3C/svg%3E",
+    "enemyArcher": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='110' y='80' width='36' height='100' fill='%23374151' filter='blur(1px)'/%3E%3C/svg%3E",
+    "enemyBoss": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='256' height='256' viewBox='0 0 256 256'%3E%3Crect x='50' y='50' width='156' height='200' fill='%23000' filter='blur(4px)'/%3E%3C/svg%3E",
+    "background": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='512' height='512'%3E%3Crect width='100%25' height='100%25' fill='%2378350f'/%3E%3C/svg%3E",
+    "projectileSword": "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Cpath d='M20,20 L80,80' stroke='%2338bdf8' stroke-width='8' filter='blur(1px)'/%3E%3C/svg%3E"
+  }
+}
