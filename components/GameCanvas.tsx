@@ -212,7 +212,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
         damageTextsRef.current.push({
             id: Math.random().toString(),
             x: x + (Math.random() * 20 - 10),
-            y: y - 20,
+            y: y - 50, // Spawn higher up to clear HP bars
             damage: Math.round(damage),
             life: 60,
             maxLife: 60,
@@ -389,8 +389,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                 const tickRate = WEAPON_DEFAULTS[WeaponType.GOLDEN_BELL].tickRate;
                 if (frameCountRef.current % tickRate === 0) {
                      const radius = WEAPON_DEFAULTS[WeaponType.GOLDEN_BELL].area * w.area * player.stats.area;
-                     const dmg = w.damage * player.stats.might;
-                     
+                     let dmg = w.damage * player.stats.might;
+                     if (player.isFrenzy) dmg *= 1.5; // Frenzy damage bonus for Golden Bell
+
                      let hitAny = false;
                      enemies.forEach(e => {
                          if (getDistance(player.pos, e.pos) < radius + e.radius) {
@@ -661,7 +662,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             // Default 1.0. If efficiency is 2.0, drain is 0.5x
             const drain = FRENZY_DRAIN_RATE / player.stats.frenzyEfficiency;
             player.bloodEssence -= drain;
-            if (frameCountRef.current % 10 === 0) player.hp -= (player.maxHp * 0.01);
+            // Decreased HP Drain Rate: Now 1% every 30 frames (0.5s) instead of 10 frames
+            if (frameCountRef.current % 30 === 0) player.hp -= (player.maxHp * 0.01);
             if (player.bloodEssence <= 0) player.isFrenzy = false;
         }
         player.bloodEssence = Math.min(player.bloodEssence, player.maxBloodEssence);
@@ -927,6 +929,19 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             ctx.save();
             ctx.translate(enemy.pos.x, enemy.pos.y);
             
+            // --- ELITE AURA ---
+            if (enemy.isElite) {
+                 ctx.save();
+                 ctx.shadowColor = '#a855f7'; // Purple glow
+                 ctx.shadowBlur = 15;
+                 ctx.beginPath();
+                 ctx.arc(0, 0, enemy.radius + 5, 0, Math.PI * 2);
+                 ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+                 ctx.lineWidth = 3;
+                 ctx.stroke();
+                 ctx.restore();
+            }
+
             drawShadow(ctx, enemy.radius);
 
             const bobY = Math.sin(frameCountRef.current * 0.15 + parseFloat(enemy.id)) * 2;
@@ -938,8 +953,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             }
 
             if (enemy.isElite) {
+                // Dashed inner ring for elite
                 ctx.beginPath();
-                ctx.arc(0, 0, enemy.radius + 5, 0, Math.PI * 2);
+                ctx.arc(0, 0, enemy.radius + 2, 0, Math.PI * 2);
                 ctx.strokeStyle = '#a855f7'; 
                 ctx.lineWidth = 2;
                 ctx.setLineDash([5, 5]);
@@ -947,8 +963,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                 ctx.setLineDash([]);
             }
 
+            // --- HANDLING FLIP ---
+            let isFlipped = false;
             if (enemy.rotation === Math.PI) {
                 ctx.scale(-1, 1);
+                isFlipped = true;
             }
             
             let spriteImg = loadedImages.enemyPeasant;
@@ -962,7 +981,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
             }
 
             // --- OPTIMIZED FLASH EFFECT ---
-            // Removed ctx.filter (Performance Killer)
             // Draw Sprite Normally First
             drawSprite(ctx, spriteImg, enemy.radius, false);
             
@@ -976,17 +994,66 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ gameState, setGameState, onLeve
                 ctx.restore();
             }
             
-            ctx.restore();
-
-            // Draw HP Bar
-            if (enemy.isElite || enemy.type === EnemyType.BOSS) {
-                const hpWidth = enemy.radius * 2;
-                const hpY = -enemy.radius * 1.5 - 10;
-                ctx.fillStyle = '#000';
-                ctx.fillRect(-hpWidth/2, hpY, hpWidth, 4);
-                ctx.fillStyle = '#dc2626';
-                ctx.fillRect(-hpWidth/2, hpY, hpWidth * (enemy.hp / enemy.maxHp), 4);
+            // --- RESTORE FLIP FOR UI ELEMENTS ---
+            // We need to un-flip so text isn't mirrored
+            if (isFlipped) {
+                ctx.scale(-1, 1);
             }
+            // If elite scaled, we need to respect that or reset it?
+            // The text should be drawn relative to the scaled size or absolute?
+            // Let's reset the elite scale too for clean UI
+            if (enemy.isElite) {
+                ctx.scale(1/1.3, 1/1.3);
+            }
+            
+            // --- UI LAYER (HP BARS & LABELS) ---
+            if (enemy.isElite || enemy.type === EnemyType.BOSS) {
+                const barOffset = -enemy.radius * 5; // Move well above the sprite center for Elite (bigger sprite)
+                
+                // Draw "Elite" Text
+                if (enemy.isElite) {
+                    ctx.font = "bold 20px 'Ma Shan Zheng'";
+                    ctx.textAlign = 'center';
+                    ctx.fillStyle = '#fff';
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 5;
+                    ctx.fillText("【精英】", 0, barOffset - 15); // Above the HP bar
+                    ctx.shadowBlur = 0; // reset
+                }
+
+                // Draw Thicker HP Bar for Boss/Elite
+                const hpWidth = enemy.radius * 3; // Wider
+                const hpY = barOffset;
+                const hpHeight = 8;
+                
+                // Border
+                ctx.fillStyle = '#f59e0b'; // Gold border
+                ctx.fillRect(-hpWidth/2 - 2, hpY - 2, hpWidth + 4, hpHeight + 4);
+                
+                // Back
+                ctx.fillStyle = '#1f2937';
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth, hpHeight);
+                
+                // Fill
+                ctx.fillStyle = '#dc2626';
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth * (Math.max(0, enemy.hp) / enemy.maxHp), hpHeight);
+            } else {
+                // Regular Enemy HP Bar - Positioned above head
+                const hpWidth = enemy.radius * 2.5;
+                const hpY = -enemy.radius * 4; // Approx head height for standard sprite
+                const hpHeight = 4;
+
+                // Background (Dark)
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth, hpHeight);
+                
+                // Foreground (Red)
+                ctx.fillStyle = '#ef4444';
+                // Ensure width is not negative
+                ctx.fillRect(-hpWidth/2, hpY, hpWidth * (Math.max(0, enemy.hp) / enemy.maxHp), hpHeight);
+            }
+
+            ctx.restore();
         });
 
         // Player

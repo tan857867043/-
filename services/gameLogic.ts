@@ -41,24 +41,25 @@ export const spawnEnemy = (playerPos: Vector2D, specificType?: EnemyType, isElit
         else if (rand > 0.70) type = EnemyType.CULTIST;
     }
 
-    let hp = 30; 
+    // --- REBALANCED HP VALUES (Lowered for better early game flow) ---
+    let hp = 30;  // Peasant (Crit kills instantly, normal ~2 hits)
     let speed = 2;
     let radius = 22; 
     let damage = 5;
 
     if (type === EnemyType.CULTIST) {
-        hp = 60; speed = 2.5; radius = 25; damage = 10;
+        hp = 80; speed = 2.5; radius = 25; damage = 10; 
     } else if (type === EnemyType.CHARGER) {
-        hp = 80; speed = 1.5; radius = 30; damage = 15; // Slow normal speed, fast charge
+        hp = 160; speed = 1.5; radius = 30; damage = 15; // Tanky but manageable
     } else if (type === EnemyType.ARCHER) {
-        hp = 40; speed = 3; radius = 20; damage = 10;
+        hp = 45; speed = 3; radius = 20; damage = 10; // Squishy
     } else if (type === EnemyType.BOSS) {
-        hp = 1200; speed = 3.5; radius = 60; damage = 30;
+        hp = 4000; speed = 3.5; radius = 70; damage = 30; // Boss HP halved from 8000
     }
 
     // Elite Modifiers
     if (isElite && type !== EnemyType.BOSS) {
-        hp *= 4;
+        hp *= 3.5; // Multiplier
         damage *= 1.5;
         radius *= 1.3;
         speed *= 1.1;
@@ -238,7 +239,11 @@ export const createProjectile = (player: Player, weaponType: WeaponType, enemies
     const weapon = player.weapons.find(w => w.type === weaponType);
     if (!weapon) return [];
 
-    const damage = weapon.damage * player.stats.might;
+    // --- DAMAGE CALCULATION ---
+    let mightMultiplier = player.stats.might;
+    if (player.isFrenzy) mightMultiplier *= 1.5; // 50% Damage Bonus in Frenzy
+
+    const damage = weapon.damage * mightMultiplier;
 
     if (weaponType === WeaponType.PALM_STRIKE) {
         const angle = Math.random() * Math.PI * 2;

@@ -1,175 +1,67 @@
 
-import { GoogleGenAI } from "@google/genai";
 import { GeneratedAssets, ArtStyle } from "../types";
 
 // --- API KEY MANAGEMENT ---
-const STORAGE_KEY_API = 'USER_GEMINI_API_KEY';
-let currentApiKey = localStorage.getItem(STORAGE_KEY_API) || (typeof process !== 'undefined' && process.env ? process.env.API_KEY : '') || '';
+// Pollinations is completely free and requires no key.
+export const setGlobalApiKey = (key: string) => {};
+export const getGlobalApiKey = () => "FREE_OPEN_API";
+export const hasValidApiKey = () => true;
 
-export const setGlobalApiKey = (key: string) => {
-    currentApiKey = key;
-    localStorage.setItem(STORAGE_KEY_API, key);
-};
+// --- IMAGE PROCESSING HELPERS ---
 
-export const getGlobalApiKey = () => currentApiKey;
-
-export const hasValidApiKey = () => !!currentApiKey;
-
-const getAIClient = () => {
-    if (!currentApiKey) {
-        throw new Error("API Key missing");
-    }
-    return new GoogleGenAI({ apiKey: currentApiKey });
-};
-
-// --- ADVANCED IMAGE PROCESSING ---
-
-/**
- * Detects the dominant background color by sampling the four corners of the image.
- * This makes the cutout robust even if AI changes the shade of green or uses white.
- */
 const detectBackgroundColor = (data: Uint8ClampedArray, width: number, height: number) => {
-    const corners = [
-        0,                                      // Top-Left
-        (width - 1) * 4,                        // Top-Right
-        (height - 1) * width * 4,               // Bottom-Left
-        ((height * width) - 1) * 4              // Bottom-Right
-    ];
-
+    const corners = [0, (width - 1) * 4, (height - 1) * width * 4, ((height * width) - 1) * 4];
     let r = 0, g = 0, b = 0;
-    corners.forEach(i => {
-        r += data[i];
-        g += data[i + 1];
-        b += data[i + 2];
-    });
-
-    return { 
-        r: Math.round(r / 4), 
-        g: Math.round(g / 4), 
-        b: Math.round(b / 4) 
-    };
+    corners.forEach(i => { r += data[i]; g += data[i + 1]; b += data[i + 2]; });
+    return { r: Math.round(r / 4), g: Math.round(g / 4), b: Math.round(b / 4) };
 };
 
-/**
- * Smart Auto-Chroma Key with Despill
- */
 const processSmartChromaKey = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const imgData = ctx.getImageData(0, 0, width, height);
     const data = imgData.data;
-    const len = data.length;
-    
-    // 1. Auto-detect background color
     const bg = detectBackgroundColor(data, width, height);
-    
-    // Determine which channel is dominant in the background
-    const maxBgChannel = Math.max(bg.r, bg.g, bg.b);
-    let domChannel = 'g';
-    if (bg.r === maxBgChannel && bg.r > 50) domChannel = 'r';
-    else if (bg.b === maxBgChannel && bg.b > 50) domChannel = 'b';
-    else if (maxBgChannel < 50) domChannel = 'dark';
-    else if (bg.r > 200 && bg.g > 200 && bg.b > 200) domChannel = 'white';
+    const tolerance = 100; 
 
-    const tolerance = 110; 
-
-    for (let i = 0; i < len; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        
-        // 2. Calculate Color Distance
+    for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
         const dist = Math.sqrt((r - bg.r)**2 + (g - bg.g)**2 + (b - bg.b)**2);
-        
-        // Alpha Keying
         if (dist < tolerance) {
-            const alpha = Math.max(0, (dist - (tolerance - 40)) * 6);
+            // Smooth alpha falloff
+            const alpha = Math.max(0, (dist - (tolerance - 20)) * 12);
             data[i + 3] = Math.min(data[i+3], Math.floor(alpha));
-            if (data[i+3] === 0) continue;
-        }
-
-        // 3. Adaptive Despill
-        if (data[i+3] > 0) {
-            if (domChannel === 'g') {
-                if (g > r && g > b) data[i + 1] = (r + b) / 2; 
-            } else if (domChannel === 'b') {
-                if (b > r && b > g) data[i + 2] = (r + g) / 2;
-            } else if (domChannel === 'white') {
-                if (r > 200 && g > 200 && b > 200) {
-                     const avg = (r + g + b) / 3;
-                     data[i] = avg; data[i+1] = avg; data[i+2] = avg;
-                }
-            }
         }
     }
-
     ctx.putImageData(imgData, 0, 0);
 };
 
 const processBlackBackground = (ctx: CanvasRenderingContext2D, width: number, height: number) => {
     const imgData = ctx.getImageData(0, 0, width, height);
     const data = imgData.data;
-    const threshold = 40; 
-
     for (let i = 0; i < data.length; i += 4) {
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        if (r < threshold && g < threshold && b < threshold) {
-            data[i+3] = 0; 
-        }
+        if (data[i] < 40 && data[i+1] < 40 && data[i+2] < 40) data[i+3] = 0;
     }
     ctx.putImageData(imgData, 0, 0);
 };
 
-const processImage = (base64Data: string, style: ArtStyle, isSprite: boolean, isProjectile: boolean): Promise<string> => {
+const processImage = (base64Data: string, isSprite: boolean, isProjectile: boolean): Promise<string> => {
     return new Promise((resolve) => {
-        if (!base64Data) { resolve(base64Data); return; }
-
         const img = new Image();
         img.crossOrigin = "Anonymous";
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            
-            // NOTE: We MUST force square aspect ratio for sprites (player/enemies) 
-            // so they are not interpreted as 2-frame sprite sheets by the renderer 
-            // if the generated image happens to be landscape.
-            let targetWidth = 512;
-            let targetHeight = 512;
-
-            if (isSprite) {
-                targetWidth = 256;
-                targetHeight = 256;
-            }
-
-            // If it's not a sprite (e.g. background), maintain aspect or specific width
-            if (!isSprite) {
-                targetWidth = 512;
-                const scale = targetWidth / img.width;
-                targetHeight = img.height * scale;
-            }
-
-            canvas.width = targetWidth;
-            canvas.height = targetHeight;
-            
+            const targetSize = isSprite ? 256 : 512;
+            canvas.width = targetSize;
+            canvas.height = targetSize;
             const ctx = canvas.getContext('2d');
+            
             if (!ctx) { resolve(base64Data); return; }
 
-            if (isSprite) {
-                // Center and Contain in Square
-                const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
-                const drawW = img.width * scale;
-                const drawH = img.height * scale;
-                const offsetX = (targetWidth - drawW) / 2;
-                const offsetY = (targetHeight - drawH) / 2;
-                ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-            } else {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            }
+            // Draw and resize
+            ctx.drawImage(img, 0, 0, targetSize, targetSize);
 
-            if (isProjectile) {
-                processBlackBackground(ctx, canvas.width, canvas.height);
-            } else {
-                processSmartChromaKey(ctx, canvas.width, canvas.height);
-            }
+            // Apply transparency
+            if (isProjectile) processBlackBackground(ctx, targetSize, targetSize);
+            else processSmartChromaKey(ctx, targetSize, targetSize);
 
             resolve(canvas.toDataURL('image/png'));
         };
@@ -180,87 +72,133 @@ const processImage = (base64Data: string, style: ArtStyle, isSprite: boolean, is
 
 const getStylePrompt = (style: ArtStyle): string => {
     switch (style) {
-        case ArtStyle.ANIME:
-            return "Japanese anime style, cel shaded, vibrant colors";
-        case ArtStyle.PIXEL:
-            return "pixel art style, clean pixels";
-        case ArtStyle.OIL:
-            return "oil painting style, thick brushstrokes";
-        case ArtStyle.INK:
-        default:
-            return "chinese ink wash painting style, bold black strokes, traditional wuxia, masterpiece";
+        case ArtStyle.ANIME: return "anime style, cel shaded, vibrant, clean lines";
+        case ArtStyle.PIXEL: return "pixel art style, 16-bit, retro";
+        case ArtStyle.OIL: return "oil painting style, textured, artistic";
+        default: return "chinese ink wash painting style, wuxia, black strokes on white";
     }
 };
 
-export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK): Promise<GeneratedAssets> => {
-    if (!hasValidApiKey()) throw new Error("API_KEY_MISSING");
+// --- POLLINATIONS.AI SERVICE ---
 
-    const ai = getAIClient();
-    const styleDesc = getStylePrompt(style);
-    
-    const charBg = "isolated on flat solid lime green background (RGB 0,255,0), no shadows, sharp silhouette, full body";
-    const projBg = "glowing energy, isolated on pure black background, high contrast";
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-    const generate = async (desc: string, bg: string, isSprite: boolean, isProjectile: boolean = false) => {
-        try {
-            const prompt = `Concept art, ${styleDesc}, ${desc}, ${bg}. Single character, centered, no background details.`;
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash-image',
-                contents: { parts: [{ text: prompt }] },
-            });
-
-            let rawBase64 = null;
-            for (const part of response.candidates?.[0]?.content?.parts || []) {
-                if (part.inlineData) {
-                    rawBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-                    break;
-                }
-            }
-            
-            if (rawBase64) {
-                return await processImage(rawBase64, style, isSprite, isProjectile);
-            }
-            return null;
-        } catch (e) {
-            console.error("Gen error", e);
-            return null;
-        }
-    };
-
-    const [player, enemyPeasant, enemyCultist, enemyCharger, enemyArcher, enemyBoss, projectileSword] = await Promise.all([
-        generate("heroic wuxia swordsman, holding sword, dynamic action pose, full body, facing right side profile", charBg, true),
-        generate("weak zombie minion, ragged clothes, hunchback, full body, facing right side profile", charBg, true),
-        generate("evil cultist mage, wearing robes and tall hat, holding a staff, mysterious, full body, facing right side profile", charBg, true),
-        generate("wild boar beast man, muscular, charging pose, heavy breathing, full body, facing right side profile", charBg, true),
-        generate("skeleton assassin archer, holding a bow, aiming, nimble, full body, facing right side profile", charBg, true),
-        generate("giant demon warlord general, heavy armor, holding massive weapon, full body, facing right side profile", charBg, true),
-        generate("magical flying sword, glowing aura, horizontal, pointing right", projBg, true, true)
-    ]);
-
-    return {
-        currentStyle: style,
-        player,
-        enemyPeasant,
-        enemyCultist,
-        enemyCharger,
-        enemyArcher,
-        enemyBoss,
-        background: null,
-        projectileSword
-    };
-};
-
-export const generateFlavorText = async (context: string): Promise<string> => {
-    if (!hasValidApiKey()) return "请先配置 API Key 以获取 AI 生成内容。";
-
+const fetchPollinationsImage = async (prompt: string, attempt = 1): Promise<string | null> => {
     try {
-         const ai = getAIClient();
-         const response = await ai.models.generateContent({
-             model: 'gemini-2.5-flash',
-             contents: `Write a short, poetic, 1-sentence description in Chinese for a Wuxia game context: ${context}. Style: Jin Yong novel.`,
-         });
-         return response.text.trim();
+        // Random seed + timestamp to force new generation
+        const seed = Math.floor(Math.random() * 10000000);
+        const cacheBust = Date.now();
+        
+        // Use 'turbo' model for speed and lower rate limit checks
+        const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=512&height=512&seed=${seed}&nologo=true&model=turbo&cb=${cacheBust}`;
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Network response was not ok");
+        
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
     } catch (e) {
-        return "剑气纵横三万里，一剑光寒十九洲。";
+        console.warn(`Attempt ${attempt} failed for Pollinations.`);
+        return null;
     }
+};
+
+export const generateGameAssets = async (style: ArtStyle = ArtStyle.INK, onProgress?: (status: string) => void): Promise<GeneratedAssets> => {
+    const styleDesc = getStylePrompt(style);
+    const charBg = "isolated on green background";
+    const projBg = "isolated on black background";
+
+    // Queue helper to run tasks sequentially
+    const runQueue = async (tasks: { label: string, desc: string, bg: string, isSprite: boolean, isProj?: boolean }[]) => {
+        const results: Record<string, string | null> = {};
+        
+        for (let i = 0; i < tasks.length; i++) {
+            const task = tasks[i];
+            const progressPercent = Math.round(((i) / tasks.length) * 100);
+            if (onProgress) onProgress(`[${progressPercent}%] 生成: ${task.label} (排队中)...`);
+            
+            // 1. Mandatory cool-down between requests to be "Nice" to the free API
+            // First item doesn't need wait, others do.
+            if (i > 0) await wait(3000); 
+
+            // 2. Generate
+            const prompt = `${styleDesc}, ${task.desc}, ${task.bg}, high quality game asset`;
+            let rawImage = await fetchPollinationsImage(prompt, 1);
+            
+            // Retry logic
+            if (!rawImage) {
+                if (onProgress) onProgress(`[${progressPercent}%] 重试: ${task.label}...`);
+                await wait(4000); // Wait longer for retry
+                rawImage = await fetchPollinationsImage(prompt, 2);
+            }
+
+            // 3. Process
+            if (rawImage) {
+                results[task.label] = await processImage(rawImage, task.isSprite, !!task.isProj);
+            } else {
+                results[task.label] = null;
+            }
+        }
+        return results;
+    };
+
+    const tasks = [
+        { key: 'player', label: '侠客主角', desc: 'wuxia swordsman hero character, action pose', bg: charBg, isSprite: true },
+        { key: 'enemyPeasant', label: '杂兵', desc: 'zombie minion, ragged clothes', bg: charBg, isSprite: true },
+        { key: 'enemyCultist', label: '邪教徒', desc: 'evil cultist mage, robes', bg: charBg, isSprite: true },
+        { key: 'enemyCharger', label: '蛮牛', desc: 'wild boar beast monster', bg: charBg, isSprite: true },
+        { key: 'enemyArcher', label: '弓手', desc: 'skeleton archer', bg: charBg, isSprite: true },
+        { key: 'enemyBoss', label: '魔王', desc: 'demon warlord boss, heavy armor', bg: charBg, isSprite: true },
+        { key: 'projectileSword', label: '飞剑', desc: 'glowing magic sword flying', bg: projBg, isSprite: true, isProj: true },
+        // Background usually takes longest/fails most often, put last or skip processing
+        // { key: 'background', label: '背景', desc: 'seamless ground texture, ancient stone floor', bg: 'texture', isSprite: false },
+    ];
+
+    const results: any = { currentStyle: style };
+    
+    // Execute queue
+    for (let i = 0; i < tasks.length; i++) {
+        const t = tasks[i];
+        if (onProgress) onProgress(`正在绘制 (${i+1}/${tasks.length}): ${t.label}`);
+        
+        // Wait before request (except first)
+        if (i > 0) await wait(2500); 
+
+        const prompt = `${styleDesc}, ${t.desc}, ${t.bg}, game asset`;
+        let img = await fetchPollinationsImage(prompt);
+        
+        if (!img) {
+            // Simple retry
+            await wait(2000);
+            img = await fetchPollinationsImage(prompt);
+        }
+
+        if (img) {
+            results[t.key] = await processImage(img, t.isSprite, !!t.isProj);
+        } else {
+            results[t.key] = null; // Will fallback to default
+        }
+    }
+
+    // Handle background separately (less critical, no removal needed)
+    // results['background'] = null; // Skip background gen to save time/quota for now, or uncomment below
+    
+    return results as GeneratedAssets;
+};
+
+// Simple offline flavor text
+export const generateFlavorText = async (context: string): Promise<string> => {
+    const texts = [
+        "剑气纵横三万里，一剑光寒十九洲。",
+        "十步杀一人，千里不留行。",
+        "风萧萧兮易水寒，壮士一去兮不复还。",
+        "天下风云出我辈，一入江湖岁月催。",
+        "曾经沧海难为水，除却巫山不是云。"
+    ];
+    return texts[Math.floor(Math.random() * texts.length)];
 }
